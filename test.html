@@ -1,0 +1,33 @@
+<html>
+    <head>
+        <script src="token.js"></script>
+        <script src="ast.js"></script>
+        <script src="parse.js"></script>
+    </head>
+    <body>
+        <script id="src" type="text/javascript">
+            function bob(c) {
+                var b = (12 + 3);
+                while(12 == 32) {
+                    a = 12.3;
+                }
+
+                if(12 == 12) {
+                    a = 1;
+                } else {
+                    if(12 == 12) {
+                        var a = b + 34 / a.b;
+                        bob(a, b * 23.2);
+                    }
+                }
+            }
+        </script>
+        <script type="text/javascript">
+            var src = document.getElementById('src').text;
+            
+            var ast = parse(src);
+            console.log(ast);
+
+        </script>
+    </body>
+</html>
