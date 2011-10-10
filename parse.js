@@ -75,15 +75,19 @@ var parse = (function(){
         return new Rule([[oper, expr_], function(ms) {return ms[1];}]);
     }
 
+    // TODO fixity
     var infix = new Rule([
         [infx('+')], function(ms) {return [Ast.Plus, ms[0]];},
         [infx('-')], function(ms) {return [Ast.Minus, ms[0]];},
         [infx('/')], function(ms) {return [Ast.Divide, ms[0]];},
         [infx('*')], function(ms) {return [Ast.Multiply, ms[0]];},
         [infx('%')], function(ms) {return [Ast.Mod, ms[0]];},
-        [infx('==')], function(ms) {return [Ast.Mod, ms[0]];},
-        [infx('<')], function(ms) {return [Ast.Mod, ms[0]];},
-        [infx('>')], function(ms) {return [Ast.Mod, ms[0]];},
+        [infx('==')], function(ms) {return [Ast.Equ, ms[0]];},
+        [infx('===')], function(ms) {return [Ast.Equ, ms[0]];},
+        [infx('<')], function(ms) {return [Ast.Ltn, ms[0]];},
+        [infx('>')], function(ms) {return [Ast.Gtn, ms[0]];},
+        [infx('<=')], function(ms) {return [Ast.Lte, ms[0]];},
+        [infx('>=')], function(ms) {return [Ast.Gte, ms[0]];},
         [eps], function(ms) {return true;},
     ]);
 
@@ -97,28 +101,30 @@ var parse = (function(){
 
     var actuals_tail_ = {};
     var actuals_tail = new Rule([
-        [',', expr_, actuals_tail_], function(ms) {return true},
-        [eps], function(ms) {return true},
+        [',', expr_, actuals_tail_], function(ms) {return ms[2].splice(0,0,ms[1])},
+        [eps], function(ms) {return []},
     ]);
     actuals_tail_.__proto__ = actuals_tail;
 
     var actuals = new Rule([
-        [expr_, actuals_tail], function(ms) {return true},
-        [eps], function(ms) {return true},
+        [expr_, actuals_tail], function(ms) {return ms[1].splice(0,0,ms[0])},
+        [eps], function(ms) {return []},
     ]);
 
-    var iden_infix_ = {};
-    var iden_infix = new Rule([
-        ['.', 'iden', iden_infix_], function(ms) {return true},
-        ['(', actuals, ')', infix], function(ms) {return true},
-        [infix], function(ms) {return true},
+    var function_call = new Rule([
+        ['iden', '(', actuals, ')'], function(ms) {return new Ast.FunCall(ms[0], ms[2])}
     ]);
-    iden_infix_.__proto__ = iden_infix;
+
+    var field_access = new Rule([
+        ['iden', '.', 'iden'], function(ms) {return true}
+    ]);
 
     var expr = new Rule([
         [int, infix], ifx_oper,
         [float, infix], ifx_oper,
-        ['iden', iden_infix], function(ms) {return true},
+        [function_call, infix], ifx_oper,
+        [field_access, infix], ifx_oper,
+        ['iden', infix], ifx_oper,
         ['(', expr_, ')', infix], function(ms) {return ifx_oper([ms[1], ms[3]]);},
     ]);
 
@@ -155,8 +161,23 @@ var parse = (function(){
         [eps], function(ms) {return true},
     ]);
 
+    var with_parameter = new Rule([
+        ['iden', '=', expr], function(ms) {return true},
+        ['iden'], function(ms) {return true},
+    ]);
+
+    var with_parameters_tail = new Rule([
+        [',', with_parameter, with_parameters_tail], function(ms) {return true},
+        [eps], function(ms) {return true}
+    ]);
+
+    var with_parameters = new Rule([
+        [with_parameter, with_parameters_tail], function(ms) {return true},
+        [eps], function(ms) {return true}
+    ]);
+
     var compound_statement = new Rule([
-        ['while', '(', expr, ')', '{', statements_, '}'], function(ms) {return true},
+        ['while', '(', expr, ')',  stmt_block], function(ms) {return true},
         ['if', '(', expr, ')', stmt_block, else_block], function(ms) {return true},
     ]);
 
@@ -166,7 +187,6 @@ var parse = (function(){
         [eps], function(ms) {return true},
     ]);
     statements_.__proto__ = statements;
-
     
     var fun_decl = new Rule([
         ['function', '(', formals, ')', stmt_block],
@@ -175,8 +195,24 @@ var parse = (function(){
             function(ms) {return true}
     ]);
 
+    var uniform_parameters = new Rule([
+        [formals], function(ms) {return true}
+    ]);
+
+    var vertex_shader = new Rule([
+        [statements], function(ms) { return true}
+    ]);
+
+    var fragment_shader = new Rule([
+        ['with', '(','(', with_parameters, ')',')', stmt_block], function(ms) {return true},
+    ]);
+
+    var shader_program = new Rule([
+        ['function', '(', uniform_parameters, ')', '{', vertex_shader, fragment_shader, '}'], function(ms) {return true}
+    ]);
+
     // Defines the starting point for the parse
-    var root = fun_decl;
+    var root = expr;
 
     // Returns the ast of the given javascript
     function parse(src_str) {

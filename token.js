@@ -41,6 +41,7 @@ function Tokenizer(src_str) {
         sym('while'),
         sym('if'),
         sym('else'),
+        sym('with'),
 
         // Operators etc.
         sym('.'),
@@ -86,16 +87,20 @@ function Tokenizer(src_str) {
     // Returns the next token in the stream
     function internal_next() {
         // First skip past any white space and comments
-        var pos = 0;
-        while(true) {
-            if(/\s/.test(src_str[pos])) {
-                pos++;
-            } else {
-                break;
-            }
-        }
-        src_str = src_str.slice(pos);
 
+        var whiteSpace = /^\s/;
+        var c_comment = /^\/\*.*?\*\//;
+        var cpp_comment = /^\/\/.*?\n/;
+        while(true) {
+            if(whiteSpace.test(src_str)) {
+                src_str = src_str.replace(whiteSpace, '');
+            } else if(c_comment.test(src_str)) {
+                src_str = src_str.replace(c_comment, '');
+            } else if(cpp_comment.test(src_str)) {
+                src_str = src_str.replace(cpp_comment, '');
+            } else break;
+        }
+        
         if(src_str === "") {
             // End of input
             return null;

@@ -153,7 +153,59 @@ Ast = {};
     Infix("Divide", "/");
     Infix("Multiply", "*");
     Infix("Mod", "%");
+    Infix("Equ", "==");
+    Infix("Ltn", "<");
+    Infix("Gtn", ">");
+    Infix("Lte", "<=");
+    Infix("Gte", ">=");
 
+    function FunCall(funct, actuals) {
+        this.node_type = "fun_call";
+        this.node_parent = "expr";
+
+        this.type = undefined;
+        this.funct_id = funct;
+        this.actuals = actuals;
+
+        this.check = function() {
+            var actuals_types = [];
+            for(i in this.actuals_array) {
+                this.actuals_array[i].check();
+                actuals_types.push(this.actuals_array[i].type);
+            }
+
+            var funct_sym = sym_tab.search(this.funct_id);
+            if(!funct_sym) {
+                throw "Function " + this.funct_id + " is not defined";
+            } else if(!funct_sym.is_function) {
+                throw "Symbol " + this.funct_id + " called as if it were a function";
+            } else {
+                // TODO check that the actual parameters match the function signature
+
+                this.type = funct_sym.return_type;
+            }
+        }
+
+        this.code_gen = function() {
+            emit(this.funct_id); 
+            emit('(');
+
+            var len = this.actuals.length;
+            if(len > 0) {
+                this.actuals[0].code_gen();
+                for(var i = 0; i < len; i++) {
+                    emit(', ');
+                    this.actuals[i].code_gen();
+                }
+            }
+
+            emit(')');
+        }
+    }
+    FunCall.prototype = expr_proto;
+    exports.FunCall = FunCall;
+
+    /*
     function function_decl(name, formals, statements) {
         this.node_type = "function decl";
         this.node_parent = stmt_proto;
@@ -194,6 +246,7 @@ Ast = {};
     }
     Float.prototype = node_proto;
     exports.Float = Float;
+    */
 
     // Utility functions
 
