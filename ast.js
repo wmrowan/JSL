@@ -205,6 +205,37 @@ Ast = {};
     FunCall.prototype = expr_proto;
     exports.FunCall = FunCall;
 
+    function FieldAccess(base, field) {
+        this.node_type = "field_access";
+        this.node_parent = "expr";
+
+        this.type = undefined;
+        this.base = base;
+        this.field = field;
+
+        this.check = function() {
+            var base_sym = sym_tab.search(this.base);   
+            if(!base_sym) {
+                throw "Variable " + this.base + " is not defined";
+            }
+
+            var field_sym = base_sym.get_field(this.field);
+            if(!field_sym) {
+                throw "Field " + this.field + " is not defined on " + this.base;
+            }
+
+            this.type = field_sym.type;
+        }
+
+        this.code_gen = function() {
+            emit(this.base);
+            emit('.');
+            emit(this.field);
+        }
+    }
+    FieldAccess.prototype = expr_proto;
+    exports.FieldAccess = FieldAccess;
+
     /*
     function function_decl(name, formals, statements) {
         this.node_type = "function decl";

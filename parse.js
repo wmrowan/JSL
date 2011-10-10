@@ -116,7 +116,7 @@ var parse = (function(){
     ]);
 
     var field_access = new Rule([
-        ['iden', '.', 'iden'], function(ms) {return true}
+        ['iden', '.', 'iden'], function(ms) {return new Ast.FieldAccess(ms[0], ms[1])}
     ]);
 
     var expr = new Rule([
