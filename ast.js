@@ -376,6 +376,29 @@ Ast = {};
     VarDeclDefStmt.prototype = stmt_proto;
     exports.VarDeclDefStmt = VarDeclDefStmt;
 
+    function StmtBlk(stmt_array) {
+        this.node_type = "stmt_blk";
+        this.node_parent = node_proto;
+        this.type = undefined;
+
+        this.statements = stmt_array;
+
+        this.check = function() {
+            for(i in this.statements) {
+                this.statements[i].check();
+            }
+        }
+
+        this.code_gen = function() {
+            emit("{ ");
+            for(i in this.statements) {
+                this.statements[i].code_gen();
+            }
+            emit(" }");
+        }
+    }
+    StmtBlk.prototype = node_proto;
+    exports.StmtBlk = StmtBlk;
 
     /*
     function function_decl(name, formals, statements) {

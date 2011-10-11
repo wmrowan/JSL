@@ -146,7 +146,7 @@ var parse = (function(){
     var statements_ = {};
 
     var stmt_block = new Rule([
-        ['{', statements_, '}'], function(ms) {return ms[1]},
+        ['{', statements_, '}'], function(ms) {return new Ast.StmtBlk(ms[1])},
     ]);
 
     var statement = new Rule([
