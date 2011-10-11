@@ -146,14 +146,15 @@ var parse = (function(){
     var statements_ = {};
 
     var stmt_block = new Rule([
-        ['{', statements_, '}'], function(ms) {return true},
+        ['{', statements_, '}'], function(ms) {return ms[1]},
     ]);
 
     var statement = new Rule([
-        ['var', 'iden', '=', expr], function(ms) {return true}, 
-        ['iden', '=', expr], function(ms) {return true}, 
-        [expr], function(ms) {return true}, 
-        [eps], function(ms) {return true},
+        ['var', 'iden', '=', expr], function(ms) {return new Ast.VarDeclDefStmt(ms[1], ms[3])}, 
+        ['var', 'iden'], function(ms) {return new Ast.VarDeclStmt(ms[1])},
+        ['iden', '=', expr], function(ms) {return new Ast.VarDefStmt(ms[0], ms[2])}, 
+        [expr], function(ms) {return new Ast.ExprStmt(ms[0])}, 
+        [eps], function(ms) {return new Ast.EmptyStmt()},
     ]);
 
     var else_block = new Rule([
@@ -182,9 +183,9 @@ var parse = (function(){
     ]);
 
     var statements = new Rule([
-        [statement, ';', statements_], function(ms) {return true},
-        [compound_statement, statements_], function(ms) {return true},
-        [eps], function(ms) {return true},
+        [statement, ';', statements_], function(ms) {return ms[1].splice(0,0,ms[0])},
+        [compound_statement, statements_], function(ms) {return ms[1].splice(0,0,ms[0])},
+        [eps], function(ms) {return []},
     ]);
     statements_.__proto__ = statements;
     
@@ -212,7 +213,7 @@ var parse = (function(){
     ]);
 
     // Defines the starting point for the parse
-    var root = expr;
+    var root = statement;
 
     // Returns the ast of the given javascript
     function parse(src_str) {

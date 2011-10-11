@@ -11,8 +11,8 @@ Ast = {};
         this.parnt = parnt;
         this._ = {};
         
-        this.add = function(sym, val) {
-            this._[sym] = (val || true);
+        this.add = function(sym) {
+            this._[sym.iden] = sym;
         };
 
         this.find = function(sum) {
@@ -25,6 +25,11 @@ Ast = {};
             if(this.parnt) return this.parnt.search(sym);
             return false;
         };
+    }
+
+    function Symbol(identifier) {
+        this.iden = identifier;
+        this.type = null;
     }
 
     // The current scope will always be available here. Nodes that define new
@@ -67,6 +72,9 @@ Ast = {};
     function Stmt() {
         this.node_type = "stmt";
         this.node_parent = node_proto;
+
+        // Statements don't have types, but they must type check correctly
+        this.type = undefined;
     }
     Stmt.prototype = node_proto;
     var stmt_proto = new Stmt();
@@ -235,6 +243,139 @@ Ast = {};
     }
     FieldAccess.prototype = expr_proto;
     exports.FieldAccess = FieldAccess;
+
+    function EmptyStmt() {
+        this.node_type = "empty_stmt";
+        this.node_parent = stmt_proto;
+        this.type = undefined;
+
+        this.check = function() {
+            // no-op
+        }
+
+        this.code_gen = function() {
+            // no-op
+        }
+    }
+    EmptyStmt.prototype = stmt_proto;
+    exports.EmptyStmt = EmptyStmt;
+
+    function ExprStmt(expr) {
+        this.node_type = "expr_stmt";
+        this.node_parent = stmt_proto;
+        this.type = undefined;
+
+        this.expr = expr;
+
+        this.check = function() {
+            this.expr.check();
+        }
+
+        this.code_gen = function() {
+            this.expr.code_gen();
+            emit('; ');
+        }
+    }
+    ExprStmt.prototype = stmt_proto;
+    exports.ExprStmt = ExprStmt;
+
+    function VarDeclStmt(new_var) {
+        this.node_type = "vardecl_stmt";
+        this.node_parent = stmt_proto;
+        this.type = undefined;
+
+        this.new_var = new_var;
+
+        this.check = function() {
+            // Newly defined variables should not already have
+            // been declared in this scope
+            var sym = sym_tab.find(this.new_var);
+            if(sym) {
+                throw "Variable " + this.new_var + " has already been " +
+                      "declared in this scope";
+            }
+
+            // We don't know the type now. It will get fixed on first assignment.
+            // We don't actually have to know the type until code_gen anyway.
+            sym_tab.add(new Symbol(this.new_var));
+        }
+
+        this.code_gen = function() {
+            var symbol = sym_tab.find(this.new_var);
+
+            // We added it in check, better be there
+            assert(symbol, "Symbol " + this.new_var + " not defined");
+
+            // Code check on first definition should have given it a type
+            assert(symbol.type, "Symbol " + this.new_var + " declared but not defined");
+
+            emit(symbol.type + " ");
+            emit(symbol.iden);
+            emit('; ');
+        }
+    }
+    VarDeclStmt.prototype = stmt_proto;
+    exports.VarDeclStmt= VarDeclStmt;
+
+    function VarDefStmt(iden, expr) {
+        this.node_type = "vardef_stmt";
+        this.node_parent = stmt_proto;
+        this.type = undefined;
+
+        this.iden = iden;
+        this.expr = expr;
+
+        this.check = function() {
+            this.expr.check();
+            assert(this.expr.type, "Expr type check failed");
+
+            // Identifier must already have been declared
+            var symbol = sym_tab.search(this.iden);
+            if(!symbol) {
+                throw "Variable " + this.iden + " has not been declared";
+            }
+
+            if(!symbol.type) {
+                // This variable has not been defined yet, first assignment sets its type
+                symbol.type = this.expr.type;
+            } else {
+                // All following redefinitions must conform to the initial type
+                assert(symbol.type === this.expr.type, "Attempt to set variable of type " +
+                        symbol.type + " to value of type " + this.expr.type);
+            }
+        }
+
+        this.code_gen = function() {
+            emit(this.iden);
+            emit(" = ");
+            this.expr.emit();
+        }
+    }
+    VarDefStmt.prototype = stmt_proto;
+    exports.VarDefStmt = VarDefStmt;
+
+    function VarDeclDefStmt(iden, expr) {
+        this.node_type = "vardecldef_stmt";
+        this.node_parent = stmt_proto;
+        this.type = undefined;
+
+        // We treat this case as declaration followed by a definition
+        this.decl = new VarDeclStmt(iden);
+        this.def = new VarDefStmt(iden, expr);
+
+        this.check = function() {
+            this.decl.check();
+            this.def.check();
+        }
+
+        this.code_gen = function() {
+            this.decl.code_gen();
+            this.def.code_gen();
+        }
+    }
+    VarDeclDefStmt.prototype = stmt_proto;
+    exports.VarDeclDefStmt = VarDeclDefStmt;
+
 
     /*
     function function_decl(name, formals, statements) {
