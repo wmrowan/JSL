@@ -18,6 +18,12 @@ var parse = (function(){
                 for(var elem_i in production) {
                     var elem = production[elem_i];
 
+                    try {
+                        elem.is_rule;
+                    } catch(e) {
+                        console.log(elem);
+                    }
+
                     if(elem.is_rule) {
                         var sub_ast = elem.match(tokenizer);
                         if(sub_ast) {
@@ -65,7 +71,7 @@ var parse = (function(){
     ]);
 
     var float = new Rule([
-        ['float'], function(ms) {return new Ast.Int(ms[0]);},
+        ['float'], function(ms) {return new Ast.Float(ms[0]);},
     ]);
 
     // Think of this as a forward declaration, so much for hoisting
@@ -88,6 +94,7 @@ var parse = (function(){
         [infx('>')], function(ms) {return [Ast.Gtn, ms[0]];},
         [infx('<=')], function(ms) {return [Ast.Lte, ms[0]];},
         [infx('>=')], function(ms) {return [Ast.Gte, ms[0]];},
+        [infx('.')], function(ms) {return [Ast.FieldAccess, ms[0]];},
         [eps], function(ms) {return true;},
     ]);
 
@@ -101,13 +108,13 @@ var parse = (function(){
 
     var actuals_tail_ = {};
     var actuals_tail = new Rule([
-        [',', expr_, actuals_tail_], function(ms) {return ms[2].splice(0,0,ms[1])},
+        [',', expr_, actuals_tail_], function(ms) {return [ms[1]].concat(ms[2])},
         [eps], function(ms) {return []},
     ]);
     actuals_tail_.__proto__ = actuals_tail;
 
     var actuals = new Rule([
-        [expr_, actuals_tail], function(ms) {return ms[1].splice(0,0,ms[0])},
+        [expr_, actuals_tail], function(ms) {return [ms[0]].concat(ms[1])},
         [eps], function(ms) {return []},
     ]);
 
@@ -115,17 +122,21 @@ var parse = (function(){
         ['iden', '(', actuals, ')'], function(ms) {return new Ast.FunCall(ms[0], ms[2])}
     ]);
 
-    var field_access = new Rule([
-        ['iden', '.', 'iden'], function(ms) {return new Ast.FieldAccess(ms[0], ms[1])}
+    var parens_expr = new Rule([
+        ['(', expr_, ')'], function(ms) {return new Ast.ParensExpr(ms[1])},
+    ]);
+
+    // Distinct from the token, this is the expression consisting of a single identifier
+    var Iden = new Rule([
+        ['iden'], function(ms) {return new Ast.IdenExpr(ms[0])}
     ]);
 
     var expr = new Rule([
         [int, infix], ifx_oper,
         [float, infix], ifx_oper,
         [function_call, infix], ifx_oper,
-        [field_access, infix], ifx_oper,
-        ['iden', infix], ifx_oper,
-        ['(', expr_, ')', infix], function(ms) {return ifx_oper([ms[1], ms[3]]);},
+        [Iden, infix], ifx_oper,
+        [parens_expr, infix], ifx_oper,
     ]);
 
     // This hack is necessary to ensure that our "forward declaration" works
@@ -133,14 +144,14 @@ var parse = (function(){
     
     var formals_tail_ = {};
     var formals_tail = new Rule([
-        [',', 'iden', formals_tail_], function(ms) {return true},
-        [eps], function(ms) {return true},
+        [',', 'iden', formals_tail_], function(ms) {return [ms[1].value].concat(ms[2])},
+        [eps], function(ms) {return []},
     ]);
     formals_tail_.__proto__ = formals_tail;
 
     var formals = new Rule([
-        ['iden', formals_tail], function(ms) {return true},
-        [eps], function(ms) {return true},
+        ['iden', formals_tail], function(ms) {return [ms[0].value].concat(ms[1])},
+        [eps], function(ms) {return []},
     ]);
 
     var statements_ = {};
@@ -162,58 +173,58 @@ var parse = (function(){
         [eps], function(ms) {return true},
     ]);
 
-    var with_parameter = new Rule([
-        ['iden', '=', expr], function(ms) {return true},
-        ['iden'], function(ms) {return true},
+    var varying_parameter = new Rule([
+        ['iden', '=', expr_], function(ms) {return new Ast.VaryingParameter(ms[0], ms[2])},
+        ['iden'], function(ms) {return new Ast.VaryingParameter(ms[0])},
     ]);
 
-    var with_parameters_tail = new Rule([
-        [',', with_parameter, with_parameters_tail], function(ms) {return true},
-        [eps], function(ms) {return true}
+    var varying_parameters_tail_ = {};
+    var varying_parameters_tail = new Rule([
+        [',', varying_parameter, varying_parameters_tail_], function(ms) {
+            return [ms[1]].concat(ms[2]);
+        },
+        [eps], function(ms) {return []}
     ]);
+    varying_parameters_tail_.__proto__ = varying_parameters_tail;
 
-    var with_parameters = new Rule([
-        [with_parameter, with_parameters_tail], function(ms) {return true},
-        [eps], function(ms) {return true}
+    var varying_parameters = new Rule([
+        [varying_parameter, varying_parameters_tail], function(ms) {
+            return [ms[0]].concat(ms[1]);
+        },
+        [eps], function(ms) {return []}
     ]);
 
     var compound_statement = new Rule([
-        ['while', '(', expr, ')',  stmt_block], function(ms) {return true},
-        ['if', '(', expr, ')', stmt_block, else_block], function(ms) {return true},
+        //['while', '(', expr, ')',  stmt_block], function(ms) {return true},
+        ['if', '(', expr, ')', stmt_block, else_block], function(ms) {
+            return new Ast.IfStmt(ms[2], ms[4], [5])
+        },
     ]);
 
     var statements = new Rule([
-        [statement, ';', statements_], function(ms) {return ms[1].splice(0,0,ms[0])},
-        [compound_statement, statements_], function(ms) {return ms[1].splice(0,0,ms[0])},
-        [eps], function(ms) {return []},
+        [compound_statement, statements_], function(ms) {return [ms[0]].concat(ms[1])},
+        [statement, ';', statements_], function(ms) {return [ms[0]].concat(ms[2])},
+        [eps], function(ms) {return []}
     ]);
     statements_.__proto__ = statements;
     
-    var fun_decl = new Rule([
-        ['function', '(', formals, ')', stmt_block],
-            function(ms) {return true},
-        ['function', 'iden', '(', formals, ')', stmt_block],
-            function(ms) {return true}
-    ]);
-
     var uniform_parameters = new Rule([
-        [formals], function(ms) {return true}
-    ]);
-
-    var vertex_shader = new Rule([
-        [statements], function(ms) { return true}
-    ]);
-
-    var fragment_shader = new Rule([
-        ['with', '(','(', with_parameters, ')',')', stmt_block], function(ms) {return true},
+        [formals], function(ms) {return ms[0]}
     ]);
 
     var shader_program = new Rule([
-        ['function', '(', uniform_parameters, ')', '{', vertex_shader, fragment_shader, '}'], function(ms) {return true}
+        ['function', '(', uniform_parameters, ')', '{',
+            statements,
+            'with', '(', '(', varying_parameters, ')', ')',
+            stmt_block, 
+            '}'],
+        function(ms) {
+            return new Ast.ShaderProgram(ms[2], ms[5], ms[9], ms[12]);
+        }
     ]);
 
     // Defines the starting point for the parse
-    var root = statement;
+    var root = shader_program;
 
     // Returns the ast of the given javascript
     function parse(src_str) {
