@@ -139,6 +139,23 @@ var parse = (function(){
         [parens_expr, infix], ifx_oper,
     ]);
 
+    /*
+    var simple_expr = new Rule([
+        [int], function(ms) {return ms[0]},
+        [float], function(ms) {return ms[0]},
+        [function_call], function(ms) {return ms[0]},
+        [Iden], function(ms) {return ms[0]},
+        [parens_expr], function(ms) {return ms[0]},
+    ]);
+
+    var infix_expr = new
+
+    var expr = new Rule([
+        [infix_expr], function(ms) {return ms[0]},
+        [simple_expr], function(ms) {return ms[0]}
+    ]);
+    */
+
     // This hack is necessary to ensure that our "forward declaration" works
     expr_.__proto__ = expr;
     
