@@ -10,7 +10,9 @@
     <body>
         <canvas syle="border:solid;" id='canvas' height='400' width='400'></canvas>
         <script type="text/javascript">
+            console.log(parse("a / b + c * d"));
 
+            /*
             var gl = jsl_init('canvas', {'clearColor': [0.5, 0.5, 0.5]});
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -60,6 +62,7 @@
                 shader(square, gl.transforms.modelViewProjectionMatrix, hand);
                 gl.transforms.model.pop();
             });
+            */
 
         </script>
     </body>

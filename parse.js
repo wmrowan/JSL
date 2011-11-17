@@ -60,6 +60,75 @@ var parse = (function(){
         };
     }
 
+    // Rule that uses shunting yard algorithm rather than recursive descent to match
+    function InfixRule(constituentRule, operators) {
+        // Still a rule, want to be treated as such by the recursive descent rules
+        this.is_rule = true;
+
+        this._constituentRule = constituentRule;
+        this._operatorProps = {};
+        for(var i = 0; i < operators.length; i+=2) {
+            var operator = operators[i];
+            var constructor = operators[i+1];
+            this._operatorProps[operator] = {
+                'constructor':constructor,
+                'prescedence':i,
+            };
+        }
+
+        this.match = function(tokenizer) {
+            var chkPt = tokenizer.checkPoint();
+
+            var simple_expr_stack = [];
+            var operator_stack = [];
+
+            function reduce(op) {
+                var expr2 = simple_expr_stack.pop();
+                var expr1 = simple_expr_stack.pop();
+                var reducedExpr = new op.constructor(expr1, expr2);
+                simple_expr_stack.push(reducedExpr);
+            }
+
+            // Parse first simple expr
+            var result = this._constituentRule.match(tokenizer); 
+            if(!result) return null;
+            simple_expr_stack.push(result);
+
+            // Parse all operators and simple exprs we can
+            while(true) {
+                var nextOper = tokenizer.peek();
+                var operObj = this._operatorProps[nextOper.token_type];
+                if(!operObj) break;
+                tokenizer.next();
+
+                var result = this._constituentRule.match(tokenizer); 
+                if(!result) break;
+
+                while(true) {
+                    var top = operator_stack.pop();
+                    if(top && (top.prescedence <= operObj.prescedence)) {
+                        // Apply top operator imediately
+                        reduce(top);         
+                    } else {
+                        // Save operator on stack for later
+                        if(top) operator_stack.push(top);
+                        operator_stack.push(operObj);
+                        simple_expr_stack.push(result);
+                        break;
+                    }
+                }
+            }
+
+            // Reduce rest of simple expr stack with remaining operators
+            while(operator_stack.length) {
+                var top = operator_stack.pop();
+                reduce(top);
+            }
+
+            return simple_expr_stack[0];
+        }
+    }
+
     // Parser rules
 
     var eps = new Rule([
@@ -77,6 +146,7 @@ var parse = (function(){
     // Think of this as a forward declaration, so much for hoisting
     var expr_ = {};
 
+    /*
     function infx(oper) {
         return new Rule([[oper, expr_], function(ms) {return ms[1];}]);
     }
@@ -105,6 +175,7 @@ var parse = (function(){
             return ms[0];
         }
     }
+    */
 
     var actuals_tail_ = {};
     var actuals_tail = new Rule([
@@ -131,6 +202,7 @@ var parse = (function(){
         ['iden'], function(ms) {return new Ast.IdenExpr(ms[0])}
     ]);
 
+    /*
     var expr = new Rule([
         [int, infix], ifx_oper,
         [float, infix], ifx_oper,
@@ -138,8 +210,8 @@ var parse = (function(){
         [Iden, infix], ifx_oper,
         [parens_expr, infix], ifx_oper,
     ]);
+    */
 
-    /*
     var simple_expr = new Rule([
         [int], function(ms) {return ms[0]},
         [float], function(ms) {return ms[0]},
@@ -148,13 +220,26 @@ var parse = (function(){
         [parens_expr], function(ms) {return ms[0]},
     ]);
 
-    var infix_expr = new
+    // InfixRule uses shunting yard algorithm to match infix expressions
+    // Operator precedence is as defined by the ordering here
+    var infix_expr = new InfixRule(simple_expr, [
+        '.', Ast.FieldAccess,
+        '*', Ast.Multiply,
+        '/', Ast.Divide,
+        '%', Ast.Mod,
+        '+', Ast.Plus,
+        '-', Ast.Minus,
+        '<', Ast.Ltn,
+        '>', Ast.Gtn,
+        '<=', Ast.Lte,
+        '>=', Ast.Gte,
+        '==', Ast.Equ,
+        '===', Ast.Equ,
+    ]);
 
     var expr = new Rule([
         [infix_expr], function(ms) {return ms[0]},
-        [simple_expr], function(ms) {return ms[0]}
     ]);
-    */
 
     // This hack is necessary to ensure that our "forward declaration" works
     expr_.__proto__ = expr;
