@@ -158,6 +158,7 @@ Ast = {};
             }
 
             this.type = symbol.type;
+            this.symbol = symbol;
         }
 
         this.code_gen = function() {
@@ -388,39 +389,118 @@ Ast = {};
         this.baseExpr = base;
         this.fieldExpr = field;
 
-        // TODO do not use this regex to determine if we are swizzling. Look up type of first
-        // expression first. For vectors we must be swizzling, for compound symbols we must not
-        var swizzleRegExp = /^[xyzwrgba]{1,4}$/;
-
         this.check = function() {
+            this.baseExpr.check();
+
             // Two possibilities:
             //   1. Access field of uniform variable e.g. mesh.pos
             //   2. Swizzling e.g. myVec.xyz
 
-            if((this.fieldExpr.node_type === 'iden_expr') &&
-               (this.fieldExpr.iden.match(swizzleRegExp))) {
-                var width = this.fieldExpr.iden.length;
-                if(width == 1) {
-                    this.type = 'float';
-                } else {
-                    this.type = 'vec' + this.fieldExpr.iden.length;
-                }
+            var base_sym = this.baseExpr.symbol;
+            if(base_sym && base_sym.is_compound) {
+                // Compound types are not vectors, they have subfields and can't be swizzled
 
-                this.is_swizzle = true;
-            } else {
+                /*
                 var msg = "Access of field on uniform variable requires identifier";
                 assert(this.baseExpr.node_type === "iden_expr", msg);
                 assert(this.fieldExpr.node_type === "iden_expr", msg);
+                */
 
-                var baseIden = this.baseExpr.iden;
                 var fieldIden = this.fieldExpr.iden;
 
-                var base_sym = sym_tab.search(baseIden);   
-                assert(base_sym, "Variable " + baseIden + " is not defined");
+                var index_symbol = null;
+
+                // This hack, TODO do this in general for compound symbols
+                if(base_sym.is_this) {
+                    function infer_symbol_from_parameter(formal, actual) {
+                        var new_symbol;
+                        if(Array.isArray(actual) || 
+                                (actual.constructor.name === "Float32Array")) {
+                            switch(actual.length) {
+                            case 16:
+                                new_symbol = new Symbol(formal, 'mat4');
+                                break;
+                            case 9:
+                                new_symbol = new Symbol(formal, 'mat3');
+                                break;
+                            case 4:
+                                // Could be a mat2 but uncommon, assume vec4
+                                new_symbol = new Symbol(formal, 'vec4');
+                                break;
+                            case 3:
+                                new_symbol = new Symbol(formal, 'vec3');
+                                break;
+                            case 2:
+                                new_symbol = new Symbol(formal, 'vec2');
+                                break;
+                            // TODO boolean, integer types
+                            default:
+                                throw "Unrecognizable parameter type " + actual;
+                            }
+                        } else if(typeof(actual) === "object") {
+
+                            // Special type (like image) or compound type
+                            if(actual.TEXTURE) {
+                                new_symbol = new Symbol(formal, 'sampler2D');
+                            } else if(actual.ATTRIBUTE) {
+                                new_symbol = new AttributeSymbol(formal, actual.type);
+                            } else if(actual.INDEX) {
+                                // TODO when referenced in the body will be an error
+                                new_symbol = new IndexSymbol(formal);
+                                if(index_symbol) {
+                                    throw "A shader program may only have one index parameter. Found second index parameter "
+                                           + formal + " but index parameter " + index_symbol.inden + " already processed.";
+                                } else {
+                                    index_symbol = new_symbol;
+                                }
+                            } else {
+                                // Assume compound type
+                                new_symbol = new CompoundSymbol(formal);
+                                for(var field in actual) {
+                                    new_symbol.fields[field] =
+                                        infer_symbol_from_parameter(field, actual[field]); 
+                                }
+                            }
+                        } else if(typeof(actual) === "number") {
+                            // TODO figure out how to distinguish ints and floats
+                            new_symbol = new Symbol(formal, 'float');
+                        }
+                        // TODO booleans
+
+                        if(new_symbol === undefined) {
+                            throw "Unable to infer type of " + formal;
+                        }
+
+                        return new_symbol;
+                    }
+                
+                    // On demand check the type of this field
+                    var actualField = base_sym.actual_this[fieldIden];
+                    base_sym.fields[fieldIden] = infer_symbol_from_parameter(fieldIden, actualField);
+
+                    if(index_symbol) {
+                        __shade_p__.index_symbol = index_symbol;
+                    }
+                }
+
                 field_sym = base_sym.fields[fieldIden];
-                assert(field_sym, "Field " + fieldIden + " not defined on " + baseIden);
+                assert(field_sym, "Field " + fieldIden + " not defined on " + base_sym.iden);
 
                 this.type = field_sym.type;
+                this.symbol = field_sym;
+            } else {
+                // Not a compund, only valid is a swizzle on a vector type
+
+                var match = this.fieldExpr.iden.match(/^[wxyzrgba]{1,4}$/);
+                assert(match, "Invalid swizzle format");
+
+                var dimension = this.fieldExpr.iden.length;
+                if(dimension == 1) {
+                    this.type = 'float';
+                } else {
+                    this.type = 'vec' + dimension;
+                }
+                this.is_swizzle = true;
             }
         }
 
@@ -743,6 +823,8 @@ Ast = {};
         }
     }
 
+    // TODO URGH!!!!
+    var __shade_p__ = null;
     function ShaderProgram(uniforms, vertex_shader, varyings, fragment_shader) {
         this.node_type = "shader_program";
         this.node_parent = "node";
@@ -760,7 +842,8 @@ Ast = {};
         this.shader_program = null;
 
         // Infer the types of the uniform parameters from the actual parameters
-        this.check_with_actual_parameters = function(actual_parameters) {
+        this.check_with_actual_parameters = function(ths, actual_parameters) {
+            __shade_p__ = this;
             var index_symbol = null;
 
             function infer_symbol_from_parameter(formal, actual) {
@@ -833,16 +916,28 @@ Ast = {};
                 this.inferred_uniform_symbols.push(new_symbol);
             }
 
+            // Add this symbol
+            var this_symbol = new CompoundSymbol('this');
+
+            // This is pretty hacky. The idea is that we don't want
+            // to compute the types of everything defined on this. Instead
+            // we'll on demand check the types of fields actually used.
+            // TODO we should probably take this approach to all uniforms
+            this_symbol.is_this = true;
+            this_symbol.actual_this = ths;
+            this.inferred_uniform_symbols.push(this_symbol);
+
             this.index_symbol = index_symbol;
             this.check();
         };
 
         this.check = function() {
+            __shade_p__ = this;
             this.global_scope = sym_tab;
 
             // Add uniforms and varyings to top level scope
             assert(this.inferred_uniform_symbols);
-            for(var i in this.uniforms) {
+            for(var i in this.inferred_uniform_symbols) {
                 // Uniform types are inferred from the types of the actual arguments
                 sym_tab.add(this.inferred_uniform_symbols[i]);
             }
@@ -1037,16 +1132,27 @@ Ast = {};
                 }
             }
 
+            /*
             for(var i in this.uniforms) {
                 var uni = this.uniforms[i];
                 var symbol = sym_tab.search(uni);
+                find_symbol_location('', symbol);
+            }
+            */
+
+            for(var i in this.inferred_uniform_symbols) {
+                var symbol = this.inferred_uniform_symbols[i];
                 find_symbol_location('', symbol);
             }
 
             this.shader_program = sp;
         }
 
-        this.bind_and_draw = function(params, _gl) {
+        this.bind_and_draw = function(ths, params, _gl) {
+            __shade_p__ = this;
+            // Our 'this' sybol has been pushed to the end of inferred_parameters 
+            Array.prototype.push.call(params, ths);
+
             var textures_allocated = 0;
             var num_elements = null;
 

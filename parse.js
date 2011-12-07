@@ -146,37 +146,6 @@ var parse = (function(){
     // Think of this as a forward declaration, so much for hoisting
     var expr_ = {};
 
-    /*
-    function infx(oper) {
-        return new Rule([[oper, expr_], function(ms) {return ms[1];}]);
-    }
-
-    // TODO fixity
-    var infix = new Rule([
-        [infx('+')], function(ms) {return [Ast.Plus, ms[0]];},
-        [infx('-')], function(ms) {return [Ast.Minus, ms[0]];},
-        [infx('/')], function(ms) {return [Ast.Divide, ms[0]];},
-        [infx('*')], function(ms) {return [Ast.Multiply, ms[0]];},
-        [infx('%')], function(ms) {return [Ast.Mod, ms[0]];},
-        [infx('==')], function(ms) {return [Ast.Equ, ms[0]];},
-        [infx('===')], function(ms) {return [Ast.Equ, ms[0]];},
-        [infx('<')], function(ms) {return [Ast.Ltn, ms[0]];},
-        [infx('>')], function(ms) {return [Ast.Gtn, ms[0]];},
-        [infx('<=')], function(ms) {return [Ast.Lte, ms[0]];},
-        [infx('>=')], function(ms) {return [Ast.Gte, ms[0]];},
-        [infx('.')], function(ms) {return [Ast.FieldAccess, ms[0]];},
-        [eps], function(ms) {return true;},
-    ]);
-
-    function ifx_oper(ms) {
-        if(Array.isArray(ms[1])) {
-            return new ms[1][0](ms[0], ms[1][1]);
-        } else {
-            return ms[0];
-        }
-    }
-    */
-
     var actuals_tail_ = {};
     var actuals_tail = new Rule([
         [',', expr_, actuals_tail_], function(ms) {return [ms[1]].concat(ms[2])},

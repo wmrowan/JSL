@@ -158,6 +158,91 @@ function jsl_init(gl_starter, opts, debug) {
         return texture;
     };
 
+    _gl.FrameBuffer = function(opt_width, opt_height) {
+        var fb = _gl.createFramebuffer();
+        _gl.bindFramebuffer(_gl.FRAMEBUFFER, fb);
+
+        if(opt_width)  fb.width = opt_width
+                else   fb._width = _gl.width / 2.0;
+        if(opt_height) fg.height = opt_height; 
+                else   fb._height = _gl.height / 2.0;
+
+        var colorTexture = _gl.createTexture();
+        colorTexture.TEXTURE = true;
+
+        _gl.bindTexture(_gl.TEXTURE_2D, colorTexture);
+        _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_MAG_FILTER, _gl.NEAREST);
+        _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_MIN_FILTER, _gl.NEAREST);
+        _gl.texImage2D(_gl.TEXTURE_2D, 0, _gl.RGBA, fb.width, fb.height, 0, _gl.RGBA, _gl.UNSIGNED_BYTE, null);
+        _gl.bindTexture(_gl.TEXTURE_2D, null);
+
+        var depthTexture = _gl.createTexture();
+        depthTexture.TEXTURE = true;
+
+        _gl.bindTexture(_gl.TEXTURE_2D, depthTexture);
+        _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_MAG_FILTER, _gl.NEAREST);
+        _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_MIN_FILTER, _gl.NEAREST);
+        _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_WRAP_S, _gl.CLAMP_TO_EDGE);
+        _gl.texParameteri(_gl.TEXTURE_2D, _gl.TEXTURE_WRAP_T, _gl.CLAMP_TO_EDGE);
+        _gl.texImage2D(_gl.TEXTURE_2D, 0, _gl.DEPTH_COMPONENT, fb.width, fb.height, 0, _gl.DEPTH_COMPONENT, _gl.UNSIGNED_BYTE, null);
+        _gl.bindTexture(_gl.TEXTURE_2D, null);
+
+        _gl.framebufferTexture2D(_gl.FRAMEBUFFER, _gl.COLOR_ATTACHMENT0, _gl.TEXTURE_2D, colorTexture, 0);
+        _gl.framebufferTexture2D(_gl.FRAMEBUFFER, _gl.DEPTH_ATTACHMENT, _gl.TEXTURE_2D, depthTexture, 0);
+
+        _gl.bindFramebuffer(_gl.FRAMEBUFFER, null);
+
+        fb.is_framebuffer = true;
+
+        // Methods
+
+        fb.bind = function() {
+            _gl.bindFramebuffer(_gl.FRAMEBUFFER, fb);
+        };
+
+        fb.unbind = function() {
+            _gl.bindFramebuffer(_gl.FRAMEBUFFER, null);
+        };
+
+        //TODO Is this the best interface???
+        fb.getColorTexture = function() {
+            return colorTexture;
+        };
+
+        fb.getDepthTexture = function() {
+            return depthTexture;
+        };
+
+        return fb;
+    };
+
+    _gl.ImageFromTexture = function(texture) {
+        // Render texture into a new canvas element
+        var newCanvas = document.createElement('canvas');
+        newCanvas.height = 256;
+        newCanvas.width = 256;
+        var newGL = jsl_init(newCanvas);
+
+        newGL.viewport(0,0,1,1);
+
+        var shader = newGL.ShaderFunction(function(mesh, text){
+            // Simple shader that just draws the texture to a full screen quad
+            gl_Position = vec4(mesh.pos, 1.0);
+            with((texcoord = mesh.texcoord)) {
+                gl_FragColor = texture2D(text, texcoord);
+            }
+        });
+
+        // Render using shader
+        shader(newGL.Shapes.square, texture);
+
+        var url = canvas.toDataURL();
+        var img = document.createElement('img');
+        img.src = url;
+
+        return img;
+    };
+
     _gl.ShaderFunction = function(javascript_function_representation) {
         if(!typeof(javascript_function_representation) === "function")
             throw "Argument to ShaderFunction must be a javascript function";
@@ -165,20 +250,20 @@ function jsl_init(gl_starter, opts, debug) {
         var shader_src = javascript_function_representation.toString();
         var ast = parse(shader_src);
 
-        function compileProgram(params) {
-            ast.check_with_actual_parameters(params);
+        function compileProgram(ths, params) {
+            ast.check_with_actual_parameters(ths, params);
 
             // Assuming that type checked we can finally compile the shader
             ast.code_gen();
             ast.compile(_gl);
 
-            runShader(params);
+            runShader(ths, params);
             executeShader = runShader;
         }
 
-        function runShader(params) {
+        function runShader(ths, params) {
             // TODO test performance overhead of this process
-            ast.bind_and_draw(params, _gl);
+            ast.bind_and_draw(ths, params, _gl);
         }
 
         var executeShader = compileProgram;
@@ -186,7 +271,8 @@ function jsl_init(gl_starter, opts, debug) {
         // Can't type check or code gen until we know the types of the uniforms
         return function() {
             // This is a thunk that will compile the program on first execution
-            executeShader(arguments); 
+            // The shader may make use of 'this' if is a method on an object
+            executeShader(this, arguments); 
         };
     }
 
