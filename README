@@ -1,3 +1,5 @@
 JSL -- JavaScript Shader Language
 
 A shader language built on WebGL that can be inlined in your web apps!
+
+Run 'make' to quickly launch the solar system demo.
